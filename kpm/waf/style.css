@@ -1,0 +1,71 @@
+/* Monochrome, single-screen views for Mesquite's CSS2 layout engine. */
+.page { padding: 0.55em 0.65em; }
+button, input { font-family: Helvetica, Arial, sans-serif; }
+button {
+    font-size: 0.72em;
+    line-height: 1.25;
+    padding: 0.38em 0.7em;
+    border: 1px solid #000;
+    background: #fff;
+    color: #000;
+    cursor: pointer;
+}
+button.primary, button.active { background: #000; color: #fff; }
+button:active { background: #000; color: #fff; }
+button.primary:active, button.active:active { background: #fff; color: #000; }
+button[disabled] { color: #777; border-color: #aaa; background: #fff; cursor: default; }
+.top { overflow: hidden; padding-bottom: 0.45em; border-bottom: 3px solid #000; }
+.top h1 { display: block; font-size: 1.35em; margin: 0; line-height: 1; }
+.subtitle { display: block; font-size: 0.42em; font-weight: normal; margin-top: 0.55em; }
+.state { float: right; font-size: 0.62em; padding: 0.3em 0.55em; border: 1px solid #000; }
+.state-idle, .state-unknown { border-style: solid; color: #000; }
+.status-panel { padding: 0.45em 0 0.35em; }
+.section-label { font-size: 0.58em; font-weight: bold; letter-spacing: 0.06em; text-transform: uppercase; }
+.progress { font-size: 0.72em; margin: 0.3em 0 0.15em; }
+.current { font-size: 0.6em; color: #444; height: 1.3em; line-height: 1.3; overflow: hidden; white-space: nowrap; }
+.toolbar { margin-top: 0.3em; }
+.toolbar button { margin-right: 0.3em; }
+.error { font-size: 0.65em; margin: 0; max-height: 2.5em; overflow: auto; }
+.view { margin-top: 0.35em; }
+.list-heading { overflow: hidden; padding: 0.6em 0; border-bottom: 2px solid #000; }
+.list-heading h2 { font-size: 0.95em; margin: 0.3em 0 0; }
+.list-heading #catalog-count { font-size: 0.65em; font-weight: normal; margin-left: 0.4em; }
+.list-heading button, .header-action { float: right; }
+.catalog { border-bottom: 1px solid #999; padding: 0.55em 0; }
+.catalog-title { font-size: 0.85em; font-weight: bold; height: 1.25em; overflow: hidden; white-space: nowrap; }
+.catalog-meta { float: right; font-size: 0.52em; border: 1px solid #777; padding: 0.2em 0.35em; margin-left: 0.5em; }
+.catalog-url { font-size: 0.6em; color: #444; height: 1.3em; line-height: 1.3; overflow: hidden; white-space: nowrap; margin: 0.2em 0; }
+.catalog .buttons { margin: 0.3em 0 0; }
+.catalog .buttons button { font-size: 0.62em; margin: 0 0.3em 0 0; padding: 0.35em 0.7em; }
+
+.pagination { text-align: center; margin-top: 0.55em; }
+.pagination span { font-size: 0.6em; margin: 0 0.7em; }
+.pagination button { font-size: 0.62em; }
+.empty { border: 1px solid #999; padding: 1.2em 0.7em; color: #000; font-size: 0.75em; line-height: 1.6; }
+.empty strong { display: block; }
+h2, .form h2 { font-size: 0.85em; margin: 0 0 0.45em; }
+.field { margin: 0 0 0.4em; }
+.field label, .settings-row label, .row label { display: block; font-size: 0.65em; margin-bottom: 0.2em; }
+.field input, .row input[type="text"], .row input[type="password"], .prefix-input input {
+    display: block; width: 94%; font-size: 0.75em; padding: 0.35em 2%;
+    border: 1px solid #777; background: #fff; color: #000; margin: 0;
+}
+.row { overflow: hidden; margin-bottom: 0.4em; }
+.row label { float: left; width: 48%; margin-right: 2%; }
+.row input[type="text"], .row input[type="password"] { font-size: 1.15em; margin-top: 0.3em; }
+.options label { font-size: 0.58em; line-height: 1.7; }
+.options input { font-size: 1em; width: 0.9em; height: 0.9em; vertical-align: middle; }
+.field button { font-size: 0.72em; margin: 0 0.3em 0 0; padding: 0.38em 0.7em; }
+.help { font-size: 0.65em; line-height: 1.5; margin: 0 0 0.8em; }
+.settings-row { overflow: hidden; }
+.prefix-input { float: left; width: 73%; margin-right: 2%; }
+.settings-section { margin-top: 1em; padding-top: 0.7em; border-top: 1px solid #999; }
+
+/* Absolute positioning works in Mesquite; the dialog can scroll with the page. */
+.dialog-overlay { position: absolute; top: 0; left: 0; width: 100%; min-height: 100%; background: #ddd; z-index: 10; }
+.dialog { margin: 0.8em; padding: 0.8em; border: 2px solid #000; background: #fff; }
+.dialog h2 { font-size: 1em; padding-bottom: 0.45em; border-bottom: 2px solid #000; }
+.dialog-actions, .form-actions { margin-top: 0.8em; }
+.form-actions .delete { float: right; margin-right: 0; }
+.delete-confirm { border-top: 1px solid #000; margin-top: 0.5em; padding-top: 0.5em; }
+.error { white-space: normal; }

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 2,
+  "id": "ksync",
+  "name": "ksync",
+  "author": "Qingshan",
+  "description": "OPDS catalog sync with Kindle Library collections",
+  "version": [
+    0,
+    3,
+    7
+  ],
+  "dependencies": [],
+  "supported_platforms": [
+    "kindlehf"
+  ]
+}

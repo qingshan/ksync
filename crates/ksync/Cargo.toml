@@ -1,0 +1,24 @@
+[package]
+name = "ksync"
+version = "0.3.7"
+edition.workspace = true
+license.workspace = true
+description = "OPDS catalog sync daemon (LIPC service dev.qingshan.ksyncd) for the ksync Kindle package"
+build = "build.rs"
+
+[lib]
+name = "ksyncd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ksyncd"
+path = "src/bin/ksyncd.rs"
+
+[dependencies]
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+roxmltree = "0.20"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+rusqlite = { version = "0.31", features = ["bundled", "collation", "backup"] }

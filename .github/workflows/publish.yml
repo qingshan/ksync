@@ -1,0 +1,21 @@
+name: Update KPM catalog
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      KINDLE_CATALOG_TOKEN: ${{ secrets.KINDLE_CATALOG_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tools/publish.sh
+        if: env.KINDLE_CATALOG_TOKEN != ''
+      - run: echo "Catalog publishing skipped; configure KINDLE_CATALOG_TOKEN or run just publish locally."
+        if: env.KINDLE_CATALOG_TOKEN == ''

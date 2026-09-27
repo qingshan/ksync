@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<widget id="dev.qingshan.ksync" version="1.0" viewmodes="application"
+    xmlns="http://www.w3.org/ns/widgets"
+    xmlns:kindle="http://kindle.amazon.com/ns/widget-extensions">
+
+    <name xml:lang="en">ksync</name>
+    <description xml:lang="en">Syncs books from OPDS catalogs into the Kindle Library collections</description>
+
+    <!-- The single HTML page Mesquite loads for this WAF. -->
+    <content src="index.html" />
+
+    <!-- Kindle object APIs this WAF is allowed to use (see config.xml docs
+         at https://kindlemodding.org/wafs-and-mesquite/understanding-config-xml.html). -->
+    <feature name="http://kindle.amazon.com/apis" required="true">
+        <param name="appmgr" value="yes" />
+        <param name="messaging" value="yes" />
+        <param name="chrome" value="yes" />
+    </feature>
+
+    <!-- LIPC app IDs this WAF is allowed to message: chromebar for the
+         title/close bar, ksyncd (the daemon bundled with this package) to
+         run catalog CRUD and sync ops. -->
+    <kindle:messaging>
+        <kindle:app name="com.lab126.chromebar" value="yes" />
+        <kindle:app name="dev.qingshan.ksyncd" value="yes" />
+    </kindle:messaging>
+
+    <kindle:settings>
+        <kindle:setting name="internetRequired" value="no" />
+        <kindle:setting name="saveContext" value="no" />
+    </kindle:settings>
+</widget>

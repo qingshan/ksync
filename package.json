@@ -1,0 +1,6 @@
+{
+  "name": "ksync-waf-tests",
+  "private": true,
+  "scripts": { "test": "node tests/e2e/browser_e2e.js" },
+  "devDependencies": { "playwright": "1.63.0" }
+}

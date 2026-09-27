@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ksync</title>
+<link rel="stylesheet" type="text/css" href="waf-base.css">
+<link rel="stylesheet" type="text/css" href="style.css?v=0.3.7">
+</head>
+<body>
+<div class="page">
+    <div class="top">
+        <button id="btn-settings" type="button" class="header-action" aria-haspopup="dialog">Settings</button>
+        <h1>ksync<span class="subtitle">Your reading, up to date.</span></h1>
+    </div>
+    <div class="status-panel">
+        <div id="state" class="state state-unknown">Checking&hellip;</div>
+        <div class="section-label">Library sync</div>
+        <div id="progress" class="progress">Waiting for sync status&hellip;</div>
+        <div id="current" class="current">&nbsp;</div>
+        <div class="toolbar" aria-label="Sync actions">
+            <button id="btn-sync-all" type="button" class="primary" disabled>Sync all</button>
+            <button id="btn-stop" type="button" disabled style="display:none">Stop</button>
+            <button id="btn-refresh" type="button">Refresh</button>
+        </div>
+    </div>
+    <div id="error" class="error" role="alert"></div>
+    <div id="view-catalogs" class="view">
+        <div class="list-heading"><button id="btn-add" type="button" aria-haspopup="dialog">+ Add catalog</button><h2>Catalogs <span id="catalog-count"></span></h2></div>
+        <div id="catalog-list" class="catalog-list"></div>
+        <div id="pagination" class="pagination" style="display:none">
+            <button id="btn-prev" type="button">Previous</button>
+            <span id="page-number"></span>
+            <button id="btn-next" type="button">Next</button>
+        </div>
+    </div>
+</div>
+<div id="dialog-overlay" class="dialog-overlay" style="display:none">
+    <div id="dialog" class="dialog" role="dialog" aria-modal="true" tabindex="-1">
+    <div id="dialog-errors"></div>
+    <div id="view-add" style="display:none">
+        <div class="form" id="catalog-form">
+            <h2 id="form-title">Add catalog</h2>
+            <div class="field"><label for="f-name">Name</label><input type="text" id="f-name" placeholder="Catalog name"></div>
+            <div class="field"><label for="f-url">OPDS URL</label><input type="text" id="f-url" placeholder="https://catalog.example/opds"></div>
+            <div class="row">
+                <label for="f-username">Username<input type="text" id="f-username" placeholder="Optional"></label>
+                <label for="f-password">Password<input type="password" id="f-password" placeholder="Optional"></label>
+            </div>
+            <div class="row options">
+                <label><input type="checkbox" id="f-enabled" checked> Include in sync all</label>
+                <label><input type="checkbox" id="f-insecure"> Skip TLS verification</label>
+            </div>
+            <div id="form-error" class="error" role="alert"></div>
+            <div class="field form-actions">
+                <button id="btn-form-submit" type="button" class="primary">Add catalog</button>
+                <button id="btn-form-cancel" type="button">Cancel</button>
+                <button id="btn-form-delete" type="button" class="delete" style="display:none">Delete catalog</button>
+            </div>
+            <div id="delete-confirm" class="delete-confirm" style="display:none">
+                <p class="help">Remove this catalog? Downloaded books stay on your Kindle.</p>
+                <button id="btn-delete-confirm" type="button">Delete catalog</button>
+                <button id="btn-delete-cancel" type="button">Keep catalog</button>
+            </div>
+        </div>
+    </div>
+    <div id="view-settings" style="display:none">
+        <h2 id="settings-title">Settings</h2>
+        <p class="help">Organize synced books into collections on your Kindle.</p>
+        <div class="settings-row">
+            <label for="f-global-prefix">Collection prefix</label>
+            <div class="prefix-input"><input type="text" id="f-global-prefix" value="KSync" placeholder="Collection prefix"></div>
+            <button id="btn-prefix-apply" type="button" class="primary">Apply</button>
+        </div>
+        <div class="settings-section">
+            <h2>Rebuild collections</h2>
+            <p class="help">Update collection membership for books already synced.</p>
+            <button id="btn-collections" type="button">Rebuild collections</button>
+        </div>
+        <div class="dialog-actions"><button id="btn-settings-close" type="button">Done</button></div>
+    </div>
+    </div>
+</div>
+<script type="text/javascript" src="waf-base.js"></script>
+<script type="text/javascript" src="ui.js?v=0.3.7"></script>
+<script type="text/javascript" src="form.js?v=0.3.7"></script>
+<script type="text/javascript" src="script.js?v=0.3.7"></script>
+</body>
+</html>
