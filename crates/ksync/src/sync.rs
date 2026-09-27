@@ -40,7 +40,25 @@ pub fn log_line(log_path: &Path, msg: &str) {
     }
 }
 
+trait Transport {
+    fn fetch(&self, url: &str, catalog: &Catalog) -> Result<Vec<u8>, String>;
+    fn download(&self, url: &str, catalog: &Catalog, dest: &Path) -> Result<(), String>;
+}
+
+struct HttpTransport;
+
+impl Transport for HttpTransport {
+    fn fetch(&self, url: &str, catalog: &Catalog) -> Result<Vec<u8>, String> {
+        http::fetch(url, catalog, Some(FEED_ACCEPT))
+    }
+
+    fn download(&self, url: &str, catalog: &Catalog, dest: &Path) -> Result<(), String> {
+        http::download(url, catalog, dest)
+    }
+}
+
 struct WalkContext<'a> {
+    transport: &'a dyn Transport,
     stop: &'a AtomicBool,
     status: &'a Mutex<Status>,
     log_path: &'a Path,
@@ -78,7 +96,7 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
         );
         return true;
     }
-    let body = match http::fetch(feed_url, catalog, Some(FEED_ACCEPT)) {
+    let body = match ctx.transport.fetch(feed_url, catalog) {
         Ok(b) => b,
         Err(e) => {
             log_line(
@@ -131,14 +149,15 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
             } else {
                 mutate_status(ctx.status, ctx.on_update, |s| {
                     s.current = entry.title.clone();
-                    s.downloaded += 1;
                 });
-                if let Err(e) = http::download(&href, catalog, &dest) {
+                if let Err(e) = ctx.transport.download(&href, catalog, &dest) {
                     mutate_status(ctx.status, ctx.on_update, |s| s.failed += 1);
                     log_line(
                         ctx.log_path,
                         &format!("error: download {} -> {}: {}", entry.title, href, e),
                     );
+                } else {
+                    mutate_status(ctx.status, ctx.on_update, |s| s.downloaded += 1);
                 }
             }
         } else if let Some(link) = entry
@@ -172,6 +191,26 @@ pub fn run_catalog_sync(
     log_path: &Path,
     on_update: &dyn Fn(),
 ) {
+    run_catalog_sync_with_transport(
+        catalog,
+        base_dir,
+        stop,
+        status,
+        log_path,
+        on_update,
+        &HttpTransport,
+    );
+}
+
+fn run_catalog_sync_with_transport(
+    catalog: &Catalog,
+    base_dir: &Path,
+    stop: &AtomicBool,
+    status: &Mutex<Status>,
+    log_path: &Path,
+    on_update: &dyn Fn(),
+    transport: &dyn Transport,
+) {
     mutate_status(status, on_update, |s| {
         s.phase = status::PHASE_SYNCING.to_string();
         s.downloaded = 0;
@@ -191,6 +230,7 @@ pub fn run_catalog_sync(
         false
     } else {
         let mut ctx = WalkContext {
+            transport,
             stop,
             status,
             log_path,
@@ -199,7 +239,11 @@ pub fn run_catalog_sync(
         };
         walk_feed(catalog, &catalog.url, base_dir, &mut ctx)
     };
-    if !stopped && !root_ok {
+    if stop.load(Ordering::SeqCst) {
+        mutate_status(status, on_update, |s| {
+            s.state = status::STATE_STOPPING.to_string()
+        });
+    } else if !root_ok {
         mutate_status(status, on_update, |s| {
             s.state = status::STATE_ERROR.to_string();
             if s.last_error.is_none() {
@@ -211,7 +255,169 @@ pub fn run_catalog_sync(
 
 #[cfg(test)]
 mod tests {
-    use super::feed_key;
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    struct FixtureTransport<'a> {
+        feeds: HashMap<String, Result<Vec<u8>, String>>,
+        visited: RefCell<Vec<String>>,
+        stop_on_fetch: Option<&'a AtomicBool>,
+    }
+
+    impl Transport for FixtureTransport<'_> {
+        fn fetch(&self, url: &str, _: &Catalog) -> Result<Vec<u8>, String> {
+            self.visited.borrow_mut().push(url.to_string());
+            if let Some(stop) = self.stop_on_fetch {
+                stop.store(true, Ordering::SeqCst);
+            }
+            self.feeds
+                .get(url)
+                .expect("unexpected feed request")
+                .clone()
+        }
+
+        fn download(&self, url: &str, _: &Catalog, dest: &Path) -> Result<(), String> {
+            if url.ends_with("missing.pdf") {
+                return Err("HTTP 404".into());
+            }
+            std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+            std::fs::write(dest, b"book").unwrap();
+            Ok(())
+        }
+    }
+
+    fn catalog() -> Catalog {
+        serde_json::from_str(
+            r#"{"id":"books","name":"Books","url":"https://example.test/feed","enabled":true}"#,
+        )
+        .unwrap()
+    }
+
+    fn feed(entries: &str) -> Vec<u8> {
+        format!(r#"<feed xmlns="http://www.w3.org/2005/Atom">{entries}</feed>"#).into_bytes()
+    }
+
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            Self(std::env::temp_dir().join(format!("ksync-sync-{}", uuid::Uuid::new_v4())))
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn counts_success_failure_and_existing_files_across_pagination() {
+        let dir = TempDir::new();
+        std::fs::create_dir_all(&dir.0).unwrap();
+        std::fs::write(dir.0.join("Existing.pdf"), b"original").unwrap();
+        let transport = FixtureTransport {
+            feeds: HashMap::from([
+                (
+                    "https://example.test/feed".into(),
+                    Ok(feed(
+                        r#"
+                    <entry><title>Good</title><link rel="http://opds-spec.org/acquisition" href="good.pdf"/></entry>
+                    <entry><title>Missing</title><link rel="http://opds-spec.org/acquisition" href="missing.pdf"/></entry>
+                    <link rel="next" href="page2"/>
+                "#,
+                    )),
+                ),
+                (
+                    "https://example.test/page2".into(),
+                    Ok(feed(
+                        r#"
+                    <entry><title>Existing</title><link rel="http://opds-spec.org/acquisition" href="existing.pdf"/></entry>
+                    <link rel="next" href="feed#again"/>
+                "#,
+                    )),
+                ),
+            ]),
+            visited: RefCell::default(),
+            stop_on_fetch: None,
+        };
+        let status = Mutex::new(Status::default());
+        run_catalog_sync_with_transport(
+            &catalog(),
+            &dir.0,
+            &AtomicBool::new(false),
+            &status,
+            &dir.0.join("sync.log"),
+            &|| {},
+            &transport,
+        );
+        let status = crate::lock_status(&status);
+        assert_eq!(
+            (status.downloaded, status.failed, status.skipped),
+            (1, 1, 1)
+        );
+        assert_eq!(transport.visited.borrow().len(), 2);
+        assert_eq!(
+            std::fs::read(dir.0.join("Existing.pdf")).unwrap(),
+            b"original"
+        );
+        assert!(dir.0.join("Good.pdf").is_file());
+        assert!(!dir.0.join("Missing.pdf").exists());
+    }
+
+    #[test]
+    fn cancellation_during_fetch_is_not_a_root_feed_error() {
+        for response in [
+            Ok(feed(r#"<entry><title>Book</title></entry>"#)),
+            Err("connection closed".into()),
+        ] {
+            let dir = TempDir::new();
+            let stop = AtomicBool::new(false);
+            let transport = FixtureTransport {
+                feeds: HashMap::from([("https://example.test/feed".into(), response)]),
+                visited: RefCell::default(),
+                stop_on_fetch: Some(&stop),
+            };
+            let status = Mutex::new(Status::default());
+            run_catalog_sync_with_transport(
+                &catalog(),
+                &dir.0,
+                &stop,
+                &status,
+                &dir.0.join("sync.log"),
+                &|| {},
+                &transport,
+            );
+            let status = crate::lock_status(&status);
+            assert_eq!(status.state, status::STATE_STOPPING);
+            assert_eq!(status.last_error, None);
+            assert_eq!(status.downloaded, 0);
+        }
+    }
+
+    #[test]
+    fn root_feed_failure_sets_error() {
+        let dir = TempDir::new();
+        let transport = FixtureTransport {
+            feeds: HashMap::from([("https://example.test/feed".into(), Err("HTTP 500".into()))]),
+            visited: RefCell::default(),
+            stop_on_fetch: None,
+        };
+        let status = Mutex::new(Status::default());
+        run_catalog_sync_with_transport(
+            &catalog(),
+            &dir.0,
+            &AtomicBool::new(false),
+            &status,
+            &dir.0.join("sync.log"),
+            &|| {},
+            &transport,
+        );
+        let status = crate::lock_status(&status);
+        assert_eq!(status.state, status::STATE_ERROR);
+        assert!(status.last_error.as_ref().unwrap().contains("root feed"));
+    }
 
     #[test]
     fn feed_key_ignores_fragments() {

@@ -84,6 +84,17 @@ just package
 `just package <version>` creates a Kindle package in `dist/`. KPM installs an
 upgrade only when its version changes.
 
+To release, bump the crate and package to the same version, run
+`just package <version>`, and attach `dist/ksync_<version>_kindlehf.kpkg` to
+GitHub Release `v<version>`. Then run `just publish <version>` to update the
+shared KPM catalog using your local Git credentials. The publishing script
+checks that the release asset exists before changing the catalog.
+
+The release workflow can update the catalog automatically when the repository
+secret `KINDLE_CATALOG_TOKEN` has write access to `qingshan/kindle`. Without
+that secret it skips the update, so publish locally. The separate test workflow
+runs Rust library, WAF, and browser checks on pushes and pull requests.
+
 ## Develop and test
 
 ```sh

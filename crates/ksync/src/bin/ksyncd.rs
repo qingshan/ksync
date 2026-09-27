@@ -84,12 +84,14 @@ fn last_cmd() -> std::sync::MutexGuard<'static, Option<String>> {
 // always current (written atomically: tmp + rename).
 
 fn write_status_file() {
-    let json = lock_status(status_mutex()).to_json();
+    let snapshot = lock_status(status_mutex());
+    let json = snapshot.to_json();
     let _ = std::fs::create_dir_all(STATUS_DIR);
     let tmp = format!("{}.tmp", STATUS_PATH);
     if std::fs::write(&tmp, &json).is_ok() {
         let _ = std::fs::rename(&tmp, STATUS_PATH);
     }
+    drop(snapshot);
 }
 
 fn set_status(f: impl FnOnce(&mut Status)) {
@@ -292,7 +294,6 @@ fn daemonize() {
         if libc::setsid() < 0 {
             std::process::exit(1);
         }
-        libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         libc::signal(libc::SIGHUP, libc::SIG_IGN);
         if libc::fork() > 0 {
             std::process::exit(0);
@@ -332,19 +333,6 @@ fn main() {
         }
     }
 
-    // Seed the shared state and write the first status.json so the WAF renders
-    // immediately (idle, with the current catalog list + global prefix).
-    status_mutex();
-    set_status(|s| {
-        s.collection_prefix = config::load_settings().collection_prefix;
-    });
-    refresh_status_catalogs();
-    log_line(Path::new(LOG_PATH), "daemon start");
-
-    let (tx, rx) = mpsc::channel::<Op>();
-    let _ = OP_TX.set(tx);
-    std::thread::spawn(move || dispatch(rx));
-
     let service = CString::new(SERVICE_NAME).expect("static, no NUL");
     let mut code: c_int = -1;
     let handle = unsafe { LipcOpenEx(service.as_ptr(), &mut code) };
@@ -357,6 +345,19 @@ fn main() {
         eprintln!("Failed to open LIPC (code {code})");
         std::process::exit(1);
     }
+
+    // Seed the shared state and write the first status.json so the WAF renders
+    // immediately (idle, with the current catalog list + global prefix).
+    status_mutex();
+    set_status(|s| {
+        s.collection_prefix = config::load_settings().collection_prefix;
+    });
+    refresh_status_catalogs();
+    log_line(Path::new(LOG_PATH), "daemon start");
+
+    let (tx, rx) = mpsc::channel::<Op>();
+    let _ = OP_TX.set(tx);
+    std::thread::spawn(move || dispatch(rx));
 
     let props: [(&str, Option<LipcCallback>, Option<LipcCallback>); 4] = [
         ("cmd", Some(cmd_getter), Some(cmd_setter)),

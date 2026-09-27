@@ -7,7 +7,9 @@ collections.
 ## Commands
 
 ```sh
-just test                 # cargo test -p ksync --lib
+just test                 # Rust library tests and WAF harness
+just e2e                  # WAF harness and browser tests
+just publish <x.y.z>       # publish an existing release URL to the KPM catalog
 just package              # cross-compile kindlehf + pack .kpkg into dist/
 just package <x.y.z>      # bump kpm package version while packing
 just toolchain            # once: ~/x-tools kindlehf gcc + liblipc stub

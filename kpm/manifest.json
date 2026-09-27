@@ -6,8 +6,8 @@
   "description": "OPDS catalog sync with Kindle Library collections",
   "version": [
     0,
-    3,
-    7
+    6,
+    0
   ],
   "dependencies": [],
   "supported_platforms": [

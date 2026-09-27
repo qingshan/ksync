@@ -15,7 +15,15 @@ jobs:
       KINDLE_CATALOG_TOKEN: ${{ secrets.KINDLE_CATALOG_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - run: ./tools/publish.sh
+      - name: Publish release URL
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            ./tools/publish.sh "${RELEASE_TAG#v}"
+          else
+            ./tools/publish.sh
+          fi
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         if: env.KINDLE_CATALOG_TOKEN != ''
       - run: echo "Catalog publishing skipped; configure KINDLE_CATALOG_TOKEN or run just publish locally."
         if: env.KINDLE_CATALOG_TOKEN == ''

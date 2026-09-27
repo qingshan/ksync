@@ -1,17 +1,16 @@
 //! Transport via the device's system `curl` (no TLS/HTTP crates in the
 //! binary — the Kindle's curl handles TLS, redirects and timeouts). Resolves
-//! `curl` on PATH first, falling back to `/usr/bin/curl`; a curl exit 60
-//! (certificate verify failure) retries once with `-k` unless the catalog
-//! already requested insecure mode — mirroring tailscale install.sh's TLS
-//! fallback. Downloads go to `dest + ".part"` and are renamed into place, so a
-//! failed transfer never leaves a partial file under its final name.
+//! `curl` on PATH first, falling back to `/usr/bin/curl`. Certificate checks
+//! are disabled only when the catalog explicitly requests insecure mode.
+//! Downloads go to `dest + ".part"` and are renamed into place, so a failed
+//! transfer never leaves a partial file under its final name.
 
 use crate::config::Catalog;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
-const USER_AGENT: &str = "ksync/0.1";
+const USER_AGENT: &str = concat!("ksync/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: &str = "15";
 const MAX_TIME: &str = "300";
 
@@ -44,25 +43,12 @@ fn base_args(catalog: &Catalog) -> Vec<String> {
     args
 }
 
-/// Run curl, retrying once with `-k` on exit 60 (cert verify failure) when the
-/// catalog is not already marked insecure.
-fn run_with_retry(
-    url: &str,
-    catalog: &Catalog,
-    mut args: Vec<String>,
-) -> Result<std::process::Output, String> {
+/// Validate the URL and terminate option parsing before invoking curl.
+fn request(url: &str, mut args: Vec<String>) -> Result<std::process::Output, String> {
     validate_http_url(url)?;
-    // End option parsing before the URL as an additional guard for malformed
-    // input that begins with a dash.
     args.push("--".into());
     args.push(url.to_string());
-    let out = run_curl(&args)?;
-    if out.status.code() == Some(60) && !catalog.insecure {
-        let mut retry = args.clone();
-        retry.insert(1, "-k".into());
-        return run_curl(&retry);
-    }
-    Ok(out)
+    run_curl(&args)
 }
 
 fn validate_http_url(url: &str) -> Result<(), String> {
@@ -96,7 +82,7 @@ pub fn fetch(url: &str, catalog: &Catalog, accept: Option<&str>) -> Result<Vec<u
         args.push("-H".into());
         args.push(format!("Accept: {}", a));
     }
-    let out = run_with_retry(url, catalog, args)?;
+    let out = request(url, args)?;
     if !out.status.success() {
         return Err(stderr_tail(&out.stderr, url));
     }
@@ -113,7 +99,7 @@ pub fn download(url: &str, catalog: &Catalog, dest: &Path) -> Result<(), String>
     let mut args = base_args(catalog);
     args.push("-o".into());
     args.push(part.to_string_lossy().into_owned());
-    let out = run_with_retry(url, catalog, args)?;
+    let out = request(url, args)?;
     if !out.status.success() {
         let _ = std::fs::remove_file(&part);
         return Err(stderr_tail(&out.stderr, url));
@@ -148,6 +134,16 @@ fn stderr_tail(stderr: &[u8], url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{last_bytes_on_char_boundary, validate_http_url};
+
+    #[test]
+    fn certificate_checks_follow_catalog_setting() {
+        let mut catalog: crate::config::Catalog =
+            serde_json::from_str(r#"{"id":"books","name":"Books","url":"https://example.test"}"#)
+                .unwrap();
+        assert!(!super::base_args(&catalog).iter().any(|arg| arg == "-k"));
+        catalog.insecure = true;
+        assert!(super::base_args(&catalog).iter().any(|arg| arg == "-k"));
+    }
 
     #[test]
     fn short_string_unchanged() {
