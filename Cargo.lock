@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "ksync"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "libc",
  "roxmltree",
