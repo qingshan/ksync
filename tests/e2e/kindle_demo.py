@@ -114,9 +114,18 @@ def main():
     if initial["state"] in ("running", "stopping"):
         raise RuntimeError("Wait for the active sync to finish before recording")
     before = ssh("md5sum /mnt/us/ksync/var/catalogs.json").stdout
-    ssh("setsid /var/local/kmc/bin/kpm launch {0} >/tmp/{0}-demo-launch.log 2>&1 </dev/null &".format(APP))
-    time.sleep(2)
-    ssh("DISPLAY=:0 " + XINPUT, input="key Escape\nsleep 700\n")
+    ssh("lipc-set-prop com.lab126.appmgrd start "
+        "app://tech.hackerdude.shell_integration.launcher/mnt/us/documents/ksync.sh")
+    deadline = time.monotonic() + 40
+    stable = 0
+    while time.monotonic() < deadline:
+        active = ssh("lipc-get-prop com.lab126.appmgrd activeApp").stdout.strip()
+        stable = stable + 1 if active == "dev.qingshan.ksync" else 0
+        if stable >= 4:
+            break
+        time.sleep(1)
+    else:
+        raise TimeoutError("Library launch did not leave ksync in the foreground")
     frames = []
     try:
         frames.append(shot("01-catalogs", "Your catalogs. Ready to sync.", "Your reading", "Sync all", "Catalogs"))

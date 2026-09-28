@@ -46,7 +46,8 @@ just demo-build  # re-encode verified existing frames without a Kindle
 ```
 
 The tour requires a 1264×1680 framebuffer and matching installed WAF assets.
-It refuses to run during an active sync. It opens the installed app, refreshes,
+It refuses to run during an active sync. It launches through the Library shell integration, requires the app to remain
+in the foreground, refreshes,
 opens Add catalog, checks missing-field validation, cancels, opens Edit and the
 delete confirmation, cancels, opens Settings, and returns to the catalog list.
 Edit/delete scenes are omitted when there are no catalogs. Tesseract locates
