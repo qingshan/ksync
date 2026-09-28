@@ -123,7 +123,7 @@ function updateChrome(appId, title) {
             template: "title",
             title: title,
             buttons: [
-                { id: "KPP_BACK", state: "enabled", handling: "notifyapp" }
+                { id: "KPP_BACK", state: "enabled", handling: "system" }
             ]
         }
     };
@@ -140,11 +140,6 @@ function hookChromeOnGo(appId, title) {
         kindle.appmgr = kindle.appmgr || {};
         kindle.appmgr.ongo = function () {
             updateChrome(appId, title);
-        };
-        kindle.appmgr.onback = function () {
-            if (typeof kindle.appmgr.back === "function") {
-                kindle.appmgr.back();
-            }
         };
     }
     updateChrome(appId, title);
