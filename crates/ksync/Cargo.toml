@@ -1,6 +1,6 @@
 [package]
 name = "ksync"
-version = "0.6.4"
+version = "0.6.13"
 edition.workspace = true
 license.workspace = true
 description = "OPDS catalog sync daemon (LIPC service dev.qingshan.ksyncd) for the ksync Kindle package"

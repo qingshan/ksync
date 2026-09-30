@@ -54,6 +54,7 @@ impl Op {
 /// Editable catalog fields; empty update credentials preserve stored values.
 #[derive(Debug, serde::Deserialize)]
 pub struct CatalogInput {
+    #[serde(default)]
     pub name: String,
     pub url: String,
     #[serde(default)]
@@ -69,7 +70,11 @@ pub struct CatalogInput {
 impl CatalogInput {
     pub fn add_to(self, catalogs: &mut Vec<Catalog>) -> String {
         let ids: Vec<_> = catalogs.iter().map(|c| c.id.clone()).collect();
-        let id = config::catalog_id_for(&self.name, &ids);
+        let id = if self.name.trim().is_empty() {
+            config::catalog_id_for_url(&self.url, &ids)
+        } else {
+            config::catalog_id_for(&self.name, &ids)
+        };
         catalogs.push(Catalog {
             id: id.clone(),
             name: self.name,
@@ -84,7 +89,9 @@ impl CatalogInput {
 
     pub fn update_in(self, id: &str, catalogs: &mut [Catalog]) -> Result<(), String> {
         let catalog = find_catalog_mut(id, catalogs)?;
-        catalog.name = self.name;
+        if !self.name.trim().is_empty() || catalog.name.trim().is_empty() {
+            catalog.name = self.name;
+        }
         catalog.url = self.url;
         catalog.insecure = self.insecure;
         catalog.enabled = self.enabled;
@@ -199,6 +206,10 @@ mod tests {
             assert_eq!(catalog.username.as_deref(), Some("reader"));
             assert_eq!(catalog.password.as_deref(), Some("secret"));
         }
+        input(r#"{"name":"","url":"https://renamed.test"}"#)
+            .update_in("Books", &mut catalogs)
+            .unwrap();
+        assert_eq!(catalogs[0].name, "Renamed");
         input(r#"{"name":"Books","url":"https://example.test","username":"new","password":"replacement"}"#)
             .update_in("Books", &mut catalogs).unwrap();
         assert_eq!(catalogs[0].username.as_deref(), Some("new"));

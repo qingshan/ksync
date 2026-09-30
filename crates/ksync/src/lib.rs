@@ -17,7 +17,9 @@ pub mod opds;
 pub mod status;
 pub mod sync;
 
-/// Root under which each catalog's books land: `/mnt/us/documents/ksync/<id>`.
+/// Root under which OPDS books land: `/mnt/us/documents/<catalog name>`.
+pub const DOCUMENTS_ROOT: &str = "/mnt/us/documents";
+/// Previous root retained for one-time migration of existing downloads.
 pub const DOCUMENTS_KSYNC: &str = "/mnt/us/documents/ksync";
 
 /// Current time as unix epoch seconds (matches the `date +%s` convention the

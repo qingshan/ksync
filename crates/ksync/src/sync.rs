@@ -64,6 +64,8 @@ struct WalkContext<'a> {
     log_path: &'a Path,
     on_update: &'a dyn Fn(),
     seen_feeds: HashSet<String>,
+    desired_files: HashSet<std::path::PathBuf>,
+    complete: bool,
 }
 
 /// HTTP does not send URL fragments to the server, so they must not create
@@ -99,6 +101,7 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
     let body = match ctx.transport.fetch(feed_url, catalog) {
         Ok(b) => b,
         Err(e) => {
+            ctx.complete = false;
             log_line(
                 ctx.log_path,
                 &format!("warning: failed to fetch feed {}: {}", feed_url, e),
@@ -109,6 +112,7 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
     let text = match std::str::from_utf8(&body) {
         Ok(t) => t,
         Err(e) => {
+            ctx.complete = false;
             log_line(
                 ctx.log_path,
                 &format!("warning: feed {} is not UTF-8: {}", feed_url, e),
@@ -119,6 +123,7 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
     let (_, entries) = match opds::parse_feed(text) {
         Ok(x) => x,
         Err(e) => {
+            ctx.complete = false;
             log_line(
                 ctx.log_path,
                 &format!("warning: failed to parse feed {}: {}", feed_url, e),
@@ -144,6 +149,7 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
             let ext = opds::guess_ext(&link.link_type, &href);
             let slug = crate::slugify(&entry.title);
             let dest = folder.join(format!("{}{}", slug, ext));
+            ctx.desired_files.insert(dest.clone());
             if dest.exists() {
                 mutate_status(ctx.status, ctx.on_update, |s| s.skipped += 1);
             } else {
@@ -180,7 +186,45 @@ fn walk_feed(catalog: &Catalog, feed_url: &str, folder: &Path, ctx: &mut WalkCon
     true
 }
 
-/// Run a full sync of one catalog into `base_dir` (`/mnt/us/documents/ksync/<id>`).
+/// Remove files from a catalog's managed directory that are absent from a
+/// successfully traversed OPDS feed. Do not follow symlinks while walking.
+fn prune_stale_files(dir: &Path, desired: &HashSet<std::path::PathBuf>, log_path: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            if path.extension().and_then(|ext| ext.to_str()) == Some("sdr") {
+                continue;
+            }
+            prune_stale_files(&path, desired, log_path);
+            if std::fs::remove_dir(&path).is_ok() {
+                log_line(
+                    log_path,
+                    &format!("removed empty directory {}", path.display()),
+                );
+            }
+        } else if file_type.is_file() && !desired.contains(&path) {
+            match std::fs::remove_file(&path) {
+                Ok(()) => log_line(log_path, &format!("removed stale book {}", path.display())),
+                Err(e) => log_line(
+                    log_path,
+                    &format!(
+                        "warning: failed to remove stale book {}: {}",
+                        path.display(),
+                        e
+                    ),
+                ),
+            }
+        }
+    }
+}
+
+/// Run a full sync of one catalog into `base_dir` under `/mnt/us/documents`.
 /// Resets the per-run counters, walks the catalog, and sets the state to
 /// `error` when the root feed itself fails (sub-feed failures are warnings).
 pub fn run_catalog_sync(
@@ -226,19 +270,17 @@ fn run_catalog_sync_with_transport(
     });
 
     let stopped = stop.load(Ordering::SeqCst);
-    let root_ok = if stopped {
-        false
-    } else {
-        let mut ctx = WalkContext {
-            transport,
-            stop,
-            status,
-            log_path,
-            on_update,
-            seen_feeds: HashSet::new(),
-        };
-        walk_feed(catalog, &catalog.url, base_dir, &mut ctx)
+    let mut ctx = WalkContext {
+        transport,
+        stop,
+        status,
+        log_path,
+        on_update,
+        seen_feeds: HashSet::new(),
+        desired_files: HashSet::new(),
+        complete: true,
     };
+    let root_ok = !stopped && walk_feed(catalog, &catalog.url, base_dir, &mut ctx);
     if stop.load(Ordering::SeqCst) {
         mutate_status(status, on_update, |s| {
             s.state = status::STATE_STOPPING.to_string()
@@ -250,6 +292,9 @@ fn run_catalog_sync_with_transport(
                 s.last_error = Some(format!("failed to fetch root feed {}", catalog.url));
             }
         });
+    }
+    if root_ok && ctx.complete && !stop.load(Ordering::SeqCst) {
+        prune_stale_files(base_dir, &ctx.desired_files, log_path);
     }
 }
 

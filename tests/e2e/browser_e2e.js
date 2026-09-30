@@ -117,32 +117,31 @@ async function main() {
 
         await tap('#btn-add');
         await page.keyboard.press('Tab');
-        assert.equal(await page.evaluate(() => document.activeElement.id), 'f-name');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'f-url');
         await page.keyboard.press('Shift+Tab');
         assert.equal(await page.evaluate(() => document.activeElement.id), 'btn-form-cancel');
         await tap('#btn-form-submit');
-        assert.equal(await page.locator('#form-error').innerText(), 'Name and URL are required');
+        assert.equal(await page.locator('#form-error').innerText(), 'OPDS URL is required');
         const prior = polls;
         await expect(() => polls > prior, 'automatic polling continues behind dialog');
-        assert.equal(await page.locator('#form-error').innerText(), 'Name and URL are required');
-        await page.locator('#f-name').fill(' New catalog ');
+        assert.equal(await page.locator('#form-error').innerText(), 'OPDS URL is required');
         await page.locator('#f-url').fill(' https://example.test/new/opds ');
         await page.evaluate(() => { window.failDelivery = true; });
         await tap('#btn-form-submit');
         assert(await page.locator('#view-add').isVisible());
-        assert.equal(await page.locator('#f-name').inputValue(), ' New catalog ');
+        assert.equal(await page.locator('#f-url').inputValue(), ' https://example.test/new/opds ');
         assert.match(await page.locator('#dialog-errors').innerText(), /fixture transport failure/);
         await page.evaluate(() => { window.failDelivery = false; });
         await shot('04-add');
         await tap('#btn-form-submit');
-        await command({ op: 'catalog_add', name: 'New catalog', url: 'https://example.test/new/opds',
+        await command({ op: 'catalog_add', name: '', url: 'https://example.test/new/opds',
             username: '', password: '', insecure: false, enabled: true });
         assert(!(await page.locator('#dialog-overlay').isVisible()));
 
         await tap('#catalog-source-0 [data-op="edit"]');
         await page.locator('#f-enabled').uncheck();
         await tap('#btn-form-submit');
-        await command({ op: 'catalog_update', id: 'source-0', name: '<Science & stories>',
+        await command({ op: 'catalog_update', id: 'source-0', name: '',
             url: 'https://example.test/0/opds', username: '', password: '', insecure: false, enabled: false });
         await tap('#catalog-source-0 [data-op="edit"]');
         await tap('#btn-form-delete');

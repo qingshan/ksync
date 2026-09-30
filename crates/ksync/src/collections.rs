@@ -16,7 +16,7 @@
 
 use crate::config::Catalog;
 use rusqlite::backup::Backup;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -125,10 +125,12 @@ fn resolve_members(
 /// just `<name>` when the prefix is empty.
 pub fn collection_name(catalog: &Catalog, prefix: &str) -> String {
     let prefix = prefix.trim();
-    if prefix.is_empty() {
-        catalog.name.clone()
-    } else {
-        format!("{} {}", prefix, catalog.name)
+    let name = catalog.name.trim();
+    match (prefix.is_empty(), name.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => name.to_string(),
+        (false, true) => prefix.to_string(),
+        (false, false) => format!("{} {}", prefix, name),
     }
 }
 
@@ -497,8 +499,51 @@ pub fn apply_ccdb(catalog: &Catalog, prefix: &str, member_paths: &[PathBuf]) -> 
 /// Collect this catalog's native-format files and run the full collections
 /// update (used by the sync worker and the WAF "Rebuild collections" op).
 pub fn rebuild_catalog(catalog: &Catalog, prefix: &str) -> CollectionsResult {
-    let paths = collect_member_paths(&catalog.base_dir());
-    apply_ccdb(catalog, prefix, &paths)
+    let base_dir = catalog.base_dir();
+    let mut groups: Vec<(Catalog, Vec<PathBuf>)> = Vec::new();
+
+    // OPDS library feeds commonly put one collection in each top-level
+    // navigation entry. The sync walk mirrors those entries as directories.
+    // Keep root acquisitions in the catalog's own collection.
+    let mut root_paths = Vec::new();
+    let mut sections = Vec::new();
+    if let Ok(entries) = fs::read_dir(&base_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                sections.push(path);
+            } else if is_native(&path) {
+                root_paths.push(path);
+            }
+        }
+    }
+    root_paths.sort();
+    sections.sort();
+    if !root_paths.is_empty() || sections.is_empty() {
+        groups.push((catalog.clone(), root_paths));
+    }
+    for section in sections {
+        let mut section_catalog = catalog.clone();
+        if let Some(name) = section.file_name().and_then(|n| n.to_str()) {
+            section_catalog.name = if catalog.name.trim().is_empty() {
+                name.to_string()
+            } else {
+                format!("{} - {}", catalog.name, name)
+            };
+        }
+        groups.push((section_catalog, collect_member_paths(&section)));
+    }
+
+    let mut total = CollectionsResult::default();
+    for (group_catalog, paths) in groups {
+        let result = apply_ccdb(&group_catalog, prefix, &paths);
+        total.added += result.added;
+        total.pending += result.pending;
+        if total.error.is_none() {
+            total.error = result.error;
+        }
+    }
+    total
 }
 
 /// Delete a collection by its exact title (the `p_titles_0_nominal` value,
@@ -507,7 +552,15 @@ pub fn rebuild_catalog(catalog: &Catalog, prefix: &str) -> CollectionsResult {
 /// prepare statements touching icu-collated columns (Entries deletes fire
 /// triggers that reference them), so the stock `=`/LIKE deletes fail there.
 pub fn remove_collection(name: &str) -> CollectionsResult {
+    let job = ccat_job();
+    let stopped = match &job {
+        Some(name) => run_shell_cmd("/sbin/stop", &[name]),
+        None => false,
+    };
     if let Err(e) = backup_ccdb() {
+        if stopped {
+            let _ = run_shell_cmd("/sbin/start", &[job.as_deref().unwrap_or("")]);
+        }
         return CollectionsResult {
             error: Some(e),
             ..Default::default()
@@ -516,6 +569,9 @@ pub fn remove_collection(name: &str) -> CollectionsResult {
     let conn = match Connection::open(CC_DB_PATH) {
         Ok(c) => c,
         Err(e) => {
+            if stopped {
+                let _ = run_shell_cmd("/sbin/start", &[job.as_deref().unwrap_or("")]);
+            }
             return CollectionsResult {
                 error: Some(format!("cannot open {}: {}", CC_DB_PATH, e)),
                 ..Default::default()
@@ -524,30 +580,75 @@ pub fn remove_collection(name: &str) -> CollectionsResult {
     };
     let _ = conn.create_collation("icu", |a, b| a.cmp(b));
     let _ = conn.busy_timeout(Duration::from_secs(15));
-    match remove_collection_conn(&conn, name) {
-        Ok(_) => CollectionsResult::default(),
+    let result = match conn.execute_batch("BEGIN") {
         Err(e) => CollectionsResult {
-            error: Some(e),
+            error: Some(format!("begin transaction failed: {}", e)),
             ..Default::default()
         },
+        Ok(()) => match remove_collection_conn(&conn, name) {
+            Ok(_) => match conn.execute_batch("COMMIT") {
+                Ok(()) => CollectionsResult::default(),
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    CollectionsResult {
+                        error: Some(format!("commit failed: {}", e)),
+                        ..Default::default()
+                    }
+                }
+            },
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                CollectionsResult {
+                    error: Some(e),
+                    ..Default::default()
+                }
+            }
+        },
+    };
+    drop(conn);
+    if stopped {
+        let restart = run_shell_cmd("/sbin/start", &[job.as_deref().unwrap_or("")]);
+        if !restart && result.error.is_none() {
+            return CollectionsResult {
+                error: Some(
+                    "collection removed but could not restart content catalog service".to_string(),
+                ),
+                ..result
+            };
+        }
     }
+    result
 }
 
 /// Pure SQL half of [`remove_collection`] (host-testable; the caller must
 /// register the `icu` collation on the connection, like the device wrapper).
 pub fn remove_collection_conn(conn: &Connection, name: &str) -> Result<usize, String> {
+    // The device can have legacy icu-collated indexes that the bundled
+    // byte-wise collation cannot safely search. Resolve exact titles by a
+    // table scan, then perform deletes by UUID.
+    let uuid = conn
+        .query_row(
+            "SELECT p_uuid FROM Entries NOT INDEXED WHERE p_type='Collection' \
+             AND p_titles_0_nominal COLLATE BINARY = ?1 LIMIT 1",
+            params![name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("find collection: {}", e))?;
+    let Some(uuid) = uuid else {
+        return Ok(0);
+    };
     conn.execute(
-        "DELETE FROM Collections WHERE i_collection_uuid IN \
-         (SELECT p_uuid FROM Entries WHERE p_type='Collection' AND p_titles_0_nominal = ?1)",
-        params![name],
+        "DELETE FROM Collections WHERE i_collection_uuid = ?1",
+        params![uuid],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| format!("delete collection membership: {}", e))?;
     let header = conn
         .execute(
-            "DELETE FROM Entries WHERE p_type='Collection' AND p_titles_0_nominal = ?1",
-            params![name],
+            "DELETE FROM Entries WHERE p_uuid = ?1 AND p_type='Collection'",
+            params![uuid],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("delete collection entry: {}", e))?;
     Ok(header)
 }
 

@@ -83,8 +83,18 @@ impl Catalog {
         }
     }
 
-    /// Where this catalog's books land: `/mnt/us/documents/ksync/<id>`.
+    /// Where this catalog's books land: `/mnt/us/documents/<catalog name>`.
     pub fn base_dir(&self) -> std::path::PathBuf {
+        let folder = if self.name.trim().is_empty() {
+            slugify(&self.id)
+        } else {
+            slugify(&self.name)
+        };
+        std::path::Path::new(crate::DOCUMENTS_ROOT).join(folder)
+    }
+
+    /// Location used by releases before books moved directly under Documents.
+    pub fn legacy_base_dir(&self) -> std::path::PathBuf {
         std::path::Path::new(crate::DOCUMENTS_KSYNC).join(&self.id)
     }
 }
@@ -123,6 +133,33 @@ pub fn catalog_id_for(name: &str, existing: &[String]) -> String {
     loop {
         let candidate = format!("{}-{}", base, n);
         if !existing.iter().any(|e| e == &candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// Stable id for an unnamed catalog, derived from its URL.
+pub fn catalog_id_for_url(url: &str, existing: &[String]) -> String {
+    let base = match url::Url::parse(url) {
+        Ok(parsed) => slugify(&format!(
+            "{} {}",
+            parsed.host_str().unwrap_or("catalog"),
+            parsed.path()
+        )),
+        Err(_) => slugify(url),
+    };
+    unique_catalog_id(&base, existing)
+}
+
+fn unique_catalog_id(base: &str, existing: &[String]) -> String {
+    if !existing.iter().any(|id| id == base) {
+        return base.to_string();
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{}-{}", base, n);
+        if !existing.iter().any(|id| id == &candidate) {
             return candidate;
         }
         n += 1;

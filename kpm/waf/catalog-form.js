@@ -5,7 +5,7 @@ var KSyncForm = (function () {
 
     function formValues() {
         return {
-            name: byId("f-name").value.replace(/^\s+|\s+$/g, ""),
+            name: "",
             url: byId("f-url").value.replace(/^\s+|\s+$/g, ""),
             username: byId("f-username").value,
             password: byId("f-password").value,
@@ -19,7 +19,6 @@ var KSyncForm = (function () {
         byId("form-error").innerHTML = "";
         byId("btn-form-delete").style.display = "none";
         byId("delete-confirm").style.display = "none";
-        byId("f-name").value = "";
         byId("f-url").value = "";
         byId("f-username").value = "";
         byId("f-password").value = "";
@@ -34,7 +33,6 @@ var KSyncForm = (function () {
         clearForm();
         editingId = c.id;
         byId("btn-form-delete").style.display = "";
-        byId("f-name").value = c.name;
         byId("f-url").value = c.url;
         byId("f-username").value = "";
         byId("f-password").value = "";
@@ -47,8 +45,8 @@ var KSyncForm = (function () {
 
     function command() {
         var values = formValues();
-        if (!values.name || !values.url) {
-            byId("form-error").innerHTML = "Name and URL are required";
+        if (!values.url) {
+            byId("form-error").innerHTML = "OPDS URL is required";
             return null;
         }
         byId("form-error").innerHTML = "";

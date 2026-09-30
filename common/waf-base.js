@@ -123,7 +123,7 @@ function updateChrome(appId, title) {
             template: "title",
             title: title,
             buttons: [
-                { id: "KPP_BACK", state: "enabled", handling: "system" }
+                { id: "KPP_CLOSE", state: "enabled", handling: "system" }
             ]
         }
     };

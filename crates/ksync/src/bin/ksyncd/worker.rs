@@ -8,6 +8,7 @@ use ksyncd::config::{self, Catalog};
 use ksyncd::jobs::Job;
 use ksyncd::status;
 use ksyncd::sync::{self, log_line};
+use ksyncd::{http, opds};
 
 use super::{
     set_status, status_mutex, write_status_file, CONFIG_PATH, LOG_PATH, STOP, WORKER_RUNNING,
@@ -30,13 +31,33 @@ pub(super) fn start_job(job: Job) {
 fn run_job(job: Job) {
     let on_update = || write_status_file();
     log_line(Path::new(LOG_PATH), "task start");
-    match job.catalogs(config::load(Path::new(CONFIG_PATH))) {
-        Ok(catalogs) => {
-            for catalog in &catalogs {
+    let mut saved_catalogs = config::load(Path::new(CONFIG_PATH));
+    match job.catalogs(saved_catalogs.clone()) {
+        Ok(mut catalogs) => {
+            for catalog in &mut catalogs {
                 if STOP.load(Ordering::SeqCst) {
                     break;
                 }
-                match job {
+                if let Some(title) = opds_title(catalog) {
+                    if catalog.name != title {
+                        catalog.name = title.clone();
+                        if let Some(saved) = saved_catalogs.iter_mut().find(|c| c.id == catalog.id)
+                        {
+                            saved.name = title;
+                        }
+                        if let Err(e) = config::save(Path::new(CONFIG_PATH), &saved_catalogs) {
+                            log_line(
+                                Path::new(LOG_PATH),
+                                &format!("warning: could not save OPDS title: {}", e),
+                            );
+                        } else {
+                            let summaries = saved_catalogs.iter().map(Catalog::summary).collect();
+                            set_status(|s| s.catalogs = summaries);
+                        }
+                    }
+                }
+                migrate_legacy_downloads(catalog);
+                match &job {
                     Job::Sync(_) => sync_one(catalog, &on_update),
                     Job::CollectionsOnly => collections_one(catalog),
                 }
@@ -61,6 +82,66 @@ fn run_job(job: Job) {
     // just-started worker can have its running status overwritten with done.
     WORKER_RUNNING.store(false, Ordering::SeqCst);
     log_line(Path::new(LOG_PATH), "task end");
+}
+
+fn opds_title(catalog: &Catalog) -> Option<String> {
+    let body = http::fetch(&catalog.url, catalog, Some(sync::FEED_ACCEPT)).ok()?;
+    let text = std::str::from_utf8(&body).ok()?;
+    let (title, _) = opds::parse_feed(text).ok()?;
+    if title.trim().is_empty() {
+        None
+    } else {
+        Some(title.trim().to_string())
+    }
+}
+
+fn migrate_legacy_downloads(catalog: &Catalog) {
+    fn move_contents(from: &Path, to: &Path) {
+        let Ok(entries) = std::fs::read_dir(from) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let source = entry.path();
+            let target = to.join(entry.file_name());
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                move_contents(&source, &target);
+                let _ = std::fs::remove_dir(&source);
+            } else if kind.is_file() {
+                if target.exists() {
+                    log_line(
+                        Path::new(LOG_PATH),
+                        &format!(
+                            "warning: keeping existing file during migration: {}",
+                            target.display()
+                        ),
+                    );
+                    continue;
+                }
+                if let Some(parent) = target.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Err(e) = std::fs::rename(&source, &target) {
+                    log_line(
+                        Path::new(LOG_PATH),
+                        &format!("warning: could not migrate {}: {}", source.display(), e),
+                    );
+                }
+            }
+        }
+    }
+
+    let old = catalog.legacy_base_dir();
+    let new = catalog.base_dir();
+    if old != new && old.is_dir() {
+        move_contents(&old, &new);
+        let _ = std::fs::remove_dir(&old);
+        if let Some(parent) = old.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
 }
 
 fn sync_one(catalog: &Catalog, on_update: &dyn Fn()) {
