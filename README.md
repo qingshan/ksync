@@ -29,6 +29,9 @@ If you use KPM's command interface, the equivalent is:
 ;kpm install ksync
 ```
 
+The first launch may briefly show a **NEW** badge on the Home screen entry.
+ksync asks the Library to clear it after the app opens.
+
 The first screen is the catalog list. Tap **Add catalog**, enter a name and
 OPDS URL, and optionally enter the username and password. Enable **Skip TLS verification**
 only for a catalog you trust that has a certificate problem.
@@ -82,7 +85,9 @@ just package
 ```
 
 `just package <version>` creates a Kindle package in `dist/`. KPM installs an
-upgrade only when its version changes.
+upgrade only when its version changes. Keep `crates/ksync/Cargo.toml`,
+`kpm/manifest.json`, and the WAF asset versions in `kpm/waf/index.html` in
+sync before packaging.
 
 To release, bump the crate and package to the same version, run
 `just package <version>`, and attach `dist/ksync_<version>_kindlehf.kpkg` to

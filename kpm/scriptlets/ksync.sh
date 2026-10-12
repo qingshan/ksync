@@ -4,7 +4,9 @@
 # DontUseFBInk
 # KeepLibraryEntry
 
-# Keep the launcher alive until KPM hands control to the WAF.
+# Refresh the Library entry after the WAF opens. Keep this scriptlet alive
+# until KPM hands control to the WAF.
+setsid /mnt/us/ksync/scripts/mark-opened.sh </dev/null >/dev/null 2>&1 &
 setsid sh -c 'exec /var/local/kmc/bin/kpm launch ksync' </dev/null >/dev/null 2>&1 &
 wait $! || exit $?
 

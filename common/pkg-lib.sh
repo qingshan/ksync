@@ -33,6 +33,8 @@ pkg_copy_scriptlet() {
         sleep 1
     fi
     cp -a "./scriptlets/${PKG_ID}.sh" "/mnt/us/documents/${PKG_ID}.sh"
+    # Give the Library scanner a fresh timestamp for the replaced entry.
+    touch "/mnt/us/documents/${PKG_ID}.sh"
 }
 
 # Portable needs-copy: print "yes" if any SRC file is missing or differs.
@@ -65,16 +67,16 @@ pkg_register_waf() {
     fi
 
     _need=$(pkg_waf_needs_copy_yes "$_waf_src" "$_waf_dst")
-    if [ -z "$_need" ]; then
-        return 0
+    if [ -n "$_need" ]; then
+        mkdir -p "$_waf_dst"
+        # Copy in place rather than rm -rf: a live Mesquite instance would
+        # otherwise read deleted entries. status.json (daemon-written, not in
+        # SRC) survives because cp does not delete extra files in DEST.
+        cp -r "$_waf_src/." "$_waf_dst/"
     fi
 
-    mkdir -p "$_waf_dst"
-    # Copy in place rather than rm -rf: a live Mesquite instance would
-    # otherwise read deleted entries. status.json (daemon-written, not in
-    # SRC) survives because cp does not delete extra files in DEST.
-    cp -r "$_waf_src/." "$_waf_dst/"
-
+    # Register on every launch: appreg.db can lose this entry while WAF files
+    # remain unchanged.
     sqlite3 "$_appreg" <<EOF
 INSERT OR IGNORE INTO interfaces(interface) VALUES('application');
 INSERT OR IGNORE INTO handlerIds(handlerId) VALUES('$APP_ID');

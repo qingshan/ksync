@@ -9,3 +9,7 @@ Sourced by this kpm package. Copied into the `.kpkg` at pack time
 - `waf-base.js` / `waf-base.css` — ES5/CSS2 chrome (Kindle object, LIPC
   JSON cmd, `status.json` poll, chromebar). Loaded before each WAF's own
   `script.js` / `style.css`.
+
+`pkg_register_waf` copies changed WAF files into Mesquite and refreshes the
+app registration on every launch. Kindle can lose the appreg entry even when
+the copied files are still present.
